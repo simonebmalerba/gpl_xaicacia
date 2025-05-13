@@ -1,13 +1,6 @@
-import json
 from typing import Dict
-from torch.utils.data import Dataset
-from sentence_transformers.readers.InputExample import InputExample
-import random
 import linecache
-import logging
-
-logger = logging.getLogger(__name__)
-
+from datasets import Dataset
 
 def concat_title_and_body(did: str, corpus: Dict[str, Dict[str, str]], sep: str):
     assert type(did) == str
@@ -19,7 +12,6 @@ def concat_title_and_body(did: str, corpus: Dict[str, Dict[str, str]], sep: str)
     if len(body):
         document.append(body)
     return sep.join(document)
-
 
 class HardNegativeDataset(Dataset):
     def __init__(self, jsonl_path, queries, corpus, sep=" "):
@@ -91,24 +83,37 @@ class HardNegativeDataset(Dataset):
             return None
 
 
-class GenerativePseudoLabelingDataset(Dataset):
-    def __init__(self, tsv_path, queries, corpus, sep=" "):
-        self.tsv_path = tsv_path
-        self.queries = queries
-        self.corpus = corpus
-        self.sep = sep
-        self.ntuples = len(linecache.getlines(tsv_path))
+def build_hf_dataset(tsv_path, queries, corpus, sep=" ", max_lines=None):
+    query_texts = []
+    pos_texts = []
+    neg_texts = []
+    labels = []
 
-    def __getitem__(self, item):
-        index = item + 1
-        tsv_line = linecache.getline(self.tsv_path, index)
-        qid, pos_pid, neg_pid, label = tsv_line.strip().split("\t")
-        query_text = self.queries[qid]
-        pos_text = concat_title_and_body(pos_pid, self.corpus, self.sep)
-        neg_text = concat_title_and_body(neg_pid, self.corpus, self.sep)
-        label = float(label)  # CE margin between (query, pos) and (query, neg)
+    with open(tsv_path, "r") as f:
+        total_lines = sum(1 for _ in f)
 
-        return InputExample(texts=[query_text, pos_text, neg_text], label=label)
+    if max_lines:
+        total_lines = min(max_lines, total_lines)
 
-    def __len__(self):
-        return self.ntuples
+    for idx in range(total_lines):
+        line = linecache.getline(tsv_path, idx + 1)  # linecache is 1-indexed
+        if not line.strip():
+            continue
+        try:
+            qid, pos_pid, neg_pid, label = line.strip().split("\t")
+        except ValueError:
+            continue  # malformed line
+
+        query_texts.append(queries[qid])
+        pos_texts.append(concat_title_and_body(pos_pid, corpus, sep))
+        neg_texts.append(concat_title_and_body(neg_pid, corpus, sep))
+        labels.append(float(label))
+
+    hf_dataset = Dataset.from_dict({
+        "text1": query_texts,
+        "text2": pos_texts,
+        "text3": neg_texts,
+        "label": labels
+    })
+
+    return hf_dataset

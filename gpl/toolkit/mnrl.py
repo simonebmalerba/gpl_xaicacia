@@ -1,5 +1,5 @@
 from beir.datasets.data_loader import GenericDataLoader
-from beir.retrieval.train import TrainRetriever
+#from beir.retrieval.train import TrainRetriever
 from sentence_transformers import SentenceTransformer, losses, models
 import os
 

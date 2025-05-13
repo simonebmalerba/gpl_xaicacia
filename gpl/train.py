@@ -4,8 +4,8 @@ from .toolkit import (
     qgen,
     NegativeMiner,
     MarginDistillationLoss,
-    GenerativePseudoLabelingDataset,
     PseudoLabeler,
+    build_hf_dataset,
     evaluate,
     resize,
     load_sbert,
@@ -16,8 +16,9 @@ from .toolkit import (
     extract_queries_split,
     rescale_gpl_training_data,
 )
-from sentence_transformers import SentenceTransformer
-from torch.utils.data import DataLoader
+from sentence_transformers import SentenceTransformer,losses, SentenceTransformerTrainer, SentenceTransformerTrainingArguments
+from sentence_transformers.training_args import BatchSamplers
+#from torch.utils.data import DataLoader
 import os
 import logging
 import argparse
@@ -232,35 +233,59 @@ def train(
         os.path.exists(ckpt_dir) and not os.listdir(ckpt_dir)
     ):
         logger.info("Now doing training on the generated data with the MarginMSE loss")
+        
         #### It can load checkpoints in both SBERT-format (recommended) and Huggingface-format
         model: SentenceTransformer = load_sbert(base_ckpt, pooling, max_seq_length)
 
         fpath_gpl_data = os.path.join(path_to_generated_data, gpl_training_data_fname)
         logger.info(f"Load GPL training data from {fpath_gpl_data}")
-        train_dataset = GenerativePseudoLabelingDataset(
-            fpath_gpl_data, gen_queries, corpus
+        triplet_dataset = build_hf_dataset(fpath_gpl_data,gen_queries,corpus).train_test_split(test_size=0.3)
+        train_dataset= triplet_dataset["train"]
+        
+        loss =  losses.MarginMSELoss(model)
+        args = SentenceTransformerTrainingArguments(
+            # Required parameter:
+            output_dir="models/bge-m3",
+            # Optional training parameters:
+            num_train_epochs=4,
+            per_device_train_batch_size=8,
+            per_device_eval_batch_size=8,
+            learning_rate=1e-5,
+            warmup_ratio=0.1,
+            fp16=False,  # Set to False if you get an error that your GPU can't run on FP16
+            bf16=False,  # Set to True if you have a GPU that supports BF16
+            batch_sampler=BatchSamplers.NO_DUPLICATES,  #
+            gradient_checkpointing = True,
+            # Optional tracking/debugging parameters:
+            eval_strategy="no",
+            #eval_steps=100,
+            save_strategy="steps",
+            save_steps=100,
+            save_total_limit=2,
+            logging_steps=100,
+            run_name=f"{base_ckpt}",  # Will be used in W&B if `wandb` is installed,
         )
-        train_dataloader = DataLoader(
-            train_dataset, shuffle=False, batch_size=batch_size_gpl, drop_last=True
-        )  # Here shuffle=False, since (or assuming) we have done it in the pseudo labeling
-        train_loss = MarginDistillationLoss(
-            model=model, similarity_fct=gpl_score_function
-        )
-
+        trainer = SentenceTransformerTrainer(
+                model=model,
+                args=args,
+                train_dataset = train_dataset,
+                loss=loss)
+        return model,args,train_dataset,loss, trainer
+        trainer.train()
         # assert gpl_steps > 1000
-        model.fit(
-            [
-                (train_dataloader, train_loss),
-            ],
-            epochs=1,
-            steps_per_epoch=gpl_steps,
-            warmup_steps=1000,
-            checkpoint_save_steps=10000,
-            checkpoint_save_total_limit=10000,
-            output_path=output_dir,
-            checkpoint_path=output_dir,
-            use_amp=use_amp,
-        )
+        #model.fit(
+        #    [
+        #        (train_dataloader, train_loss),
+        #    ],
+        #   epochs=1,
+        #    steps_per_epoch=gpl_steps,
+        #    warmup_steps=1000,
+        #   checkpoint_save_steps=10000,
+        #    checkpoint_save_total_limit=10000,
+        #    output_path=output_dir,
+        #    checkpoint_path=output_dir,
+        #    use_amp=use_amp,
+        #)
     else:
         logger.info("Trained GPL model found. Now skip training")
 
