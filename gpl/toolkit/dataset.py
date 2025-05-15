@@ -1,6 +1,11 @@
+import random
+import json
+from torch.utils.data import Dataset as TorchDataset
+from sentence_transformers.readers.InputExample import InputExample
 from typing import Dict
 import linecache
 from datasets import Dataset
+import logging
 
 def concat_title_and_body(did: str, corpus: Dict[str, Dict[str, str]], sep: str):
     assert type(did) == str
@@ -13,7 +18,7 @@ def concat_title_and_body(did: str, corpus: Dict[str, Dict[str, str]], sep: str)
         document.append(body)
     return sep.join(document)
 
-class HardNegativeDataset(Dataset):
+class HardNegativeDataset(TorchDataset):
     def __init__(self, jsonl_path, queries, corpus, sep=" "):
         self.jsonl_path = jsonl_path
         self.queries = queries
