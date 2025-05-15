@@ -15,6 +15,7 @@ from .toolkit import (
     save_qrels,
     extract_queries_split,
     rescale_gpl_training_data,
+    get_training_args
 )
 from sentence_transformers import SentenceTransformer,losses, SentenceTransformerTrainer, SentenceTransformerTrainingArguments
 from sentence_transformers.training_args import BatchSamplers
@@ -63,6 +64,7 @@ def train(
     use_train_qrels: bool = False,
     gpl_score_function: str = "dot",
     rescale_range: List[float] = None,
+    training_args_kwargs = None
 ):
     #### Assertions ####
     assert pooling in [None, "mean", "cls", "max"]
@@ -244,29 +246,13 @@ def train(
         triplet_dataset = build_hf_dataset(fpath_gpl_data,gen_queries,corpus).train_test_split(test_size=0.3)
         train_dataset= triplet_dataset["train"]
         loss =  losses.MarginMSELoss(model)
-        args = SentenceTransformerTrainingArguments(
-            # Required parameter:
-            output_dir=f"models/{ckpt_dir}",
-            # Optional training parameters:
-            num_train_epochs=2,
-            per_device_train_batch_size=batch_size_gpl,
-            per_device_eval_batch_size=8,
-            learning_rate=1e-5,
-            warmup_ratio=0.1,
-            fp16=False,  # Set to False if you get an error that your GPU can't run on FP16
-            bf16=False,  # Set to True if you have a GPU that supports BF16
-            batch_sampler=BatchSamplers.NO_DUPLICATES,  #
-            gradient_checkpointing = True,
-            # Optional tracking/debugging parameters:
-            report_to= None,
-            eval_strategy="no",
-            #eval_steps=100,
-            save_strategy="steps",
-            save_steps=100,
-            save_total_limit=2,
-            logging_steps=100,
-            run_name=f"{base_ckpt}",  # Will be used in W&B if `wandb` is installed,
+        args = training_args = get_training_args(
+            ckpt_dir=f"{ckpt_dir}",
+            batch_size_gpl=32,
+            use_amp=True,
+            training_args_kwargs=training_args_kwargs
         )
+        from IPython import embed; embed()
         if do_evaluation:
             with open(evaluation_data) as f:
                 eval_data = json.load(f)
@@ -283,7 +269,8 @@ def train(
         trainer.train()
     else:
         logger.info("Trained GPL model found. Now skip training")
-
+        
+        return model
 
     ### Train and evaluate QGen
     if mnrl_output_dir is not None:

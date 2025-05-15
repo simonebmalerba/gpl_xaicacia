@@ -10,3 +10,4 @@ from .sbert import load_sbert, directly_loadable_by_sbert
 from .log import set_logger_format
 from .beir import save_queries, save_qrels, extract_queries_split
 from .rescale import rescale_gpl_training_data
+from .training_arguments import get_training_args
