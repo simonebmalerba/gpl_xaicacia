@@ -18,10 +18,12 @@ from .toolkit import (
 )
 from sentence_transformers import SentenceTransformer,losses, SentenceTransformerTrainer, SentenceTransformerTrainingArguments
 from sentence_transformers.training_args import BatchSamplers
+from sentence_transformers.evaluation import InformationRetrievalEvaluator
 #from torch.utils.data import DataLoader
 import os
 import logging
 import argparse
+import json
 from typing import List, Union
 import math
 
@@ -228,7 +230,7 @@ def train(
 
     ### Train the model with MarginMSE loss ###
     #### This will be skipped if the checkpoint at the indicated training steps can be found ####
-    ckpt_dir = os.path.join(output_dir, str(gpl_steps))
+    ckpt_dir = os.path.join(output_dir,f'{base_ckpt}_'+str(gpl_steps))
     if not os.path.exists(ckpt_dir) or (
         os.path.exists(ckpt_dir) and not os.listdir(ckpt_dir)
     ):
@@ -241,14 +243,13 @@ def train(
         logger.info(f"Load GPL training data from {fpath_gpl_data}")
         triplet_dataset = build_hf_dataset(fpath_gpl_data,gen_queries,corpus).train_test_split(test_size=0.3)
         train_dataset= triplet_dataset["train"]
-        
         loss =  losses.MarginMSELoss(model)
         args = SentenceTransformerTrainingArguments(
             # Required parameter:
-            output_dir="models/bge-m3",
+            output_dir=f"models/{ckpt_dir}",
             # Optional training parameters:
-            num_train_epochs=4,
-            per_device_train_batch_size=8,
+            num_train_epochs=2,
+            per_device_train_batch_size=batch_size_gpl,
             per_device_eval_batch_size=8,
             learning_rate=1e-5,
             warmup_ratio=0.1,
@@ -265,42 +266,23 @@ def train(
             logging_steps=100,
             run_name=f"{base_ckpt}",  # Will be used in W&B if `wandb` is installed,
         )
+        if do_evaluation:
+            with open(evaluation_data) as f:
+                eval_data = json.load(f)
+            evaluator = InformationRetrievalEvaluator(eval_data["queries"],eval_data["corpus"],eval_data["relevant_docs"])
+        else:
+            evaluator = None
+            
         trainer = SentenceTransformerTrainer(
                 model=model,
                 args=args,
                 train_dataset = train_dataset,
-                loss=loss)
-        return model,args,train_dataset,loss, trainer
+                loss=loss,
+                evaluator = evaluator)
         trainer.train()
-        # assert gpl_steps > 1000
-        #model.fit(
-        #    [
-        #        (train_dataloader, train_loss),
-        #    ],
-        #   epochs=1,
-        #    steps_per_epoch=gpl_steps,
-        #    warmup_steps=1000,
-        #   checkpoint_save_steps=10000,
-        #    checkpoint_save_total_limit=10000,
-        #    output_path=output_dir,
-        #    checkpoint_path=output_dir,
-        #    use_amp=use_amp,
-        #)
     else:
         logger.info("Trained GPL model found. Now skip training")
 
-    ### Evaluate the model if required ###
-    if do_evaluation:
-        logger.info("Doing evaluation for GPL")
-        evaluate(
-            evaluation_data,
-            evaluation_output,
-            ckpt_dir,
-            max_seq_length,
-            score_function=gpl_score_function,
-            pooling=pooling,
-            split=eval_split,
-        )
 
     ### Train and evaluate QGen
     if mnrl_output_dir is not None:
