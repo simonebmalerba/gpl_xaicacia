@@ -258,6 +258,7 @@ def train(
             batch_sampler=BatchSamplers.NO_DUPLICATES,  #
             gradient_checkpointing = True,
             # Optional tracking/debugging parameters:
+            report_to= None
             eval_strategy="no",
             #eval_steps=100,
             save_strategy="steps",
