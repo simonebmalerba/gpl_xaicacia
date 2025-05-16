@@ -252,7 +252,6 @@ def train(
             use_amp=True,
             training_args_kwargs=training_args_kwargs
         )
-        from IPython import embed; embed()
         if do_evaluation:
             with open(evaluation_data) as f:
                 eval_data = json.load(f)
