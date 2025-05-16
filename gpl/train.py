@@ -7,6 +7,7 @@ from .toolkit import (
     PseudoLabeler,
     build_hf_dataset,
     evaluate,
+    convert_to_ir_eval_format,
     resize,
     load_sbert,
     set_logger_format,
@@ -69,7 +70,7 @@ def train(
     #### Assertions ####
     assert pooling in [None, "mean", "cls", "max"]
     if do_evaluation:
-        assert evaluation_data is not None
+        #assert evaluation_data is not None
         assert evaluation_output is not None
         try:
             GenericDataLoader(evaluation_data)
@@ -239,8 +240,8 @@ def train(
         logger.info("Now doing training on the generated data with the MarginMSE loss")
         
         #### It can load checkpoints in both SBERT-format (recommended) and Huggingface-format
-        model: SentenceTransformer = load_sbert(base_ckpt, pooling, max_seq_length)
-
+        #model: SentenceTransformer = load_sbert(base_ckpt, pooling, max_seq_length)
+        model = SentenceTransformer( base_ckpt,trust_remote_code=True)
         fpath_gpl_data = os.path.join(path_to_generated_data, gpl_training_data_fname)
         logger.info(f"Load GPL training data from {fpath_gpl_data}")
         triplet_dataset = build_hf_dataset(fpath_gpl_data,gen_queries,corpus).train_test_split(test_size=0.3)
@@ -253,12 +254,32 @@ def train(
             training_args_kwargs=training_args_kwargs
         )
         if do_evaluation:
-            with open(evaluation_data) as f:
-                eval_data = json.load(f)
-            evaluator = InformationRetrievalEvaluator(eval_data["queries"],eval_data["corpus"],eval_data["relevant_docs"])
+            use_fallback = False
+            if evaluation_data and os.path.exists(evaluation_data):
+                try:
+                    with open(evaluation_data, "r", encoding="utf-8") as f:
+                        eval_data = json.load(f)
+                    # Check if keys are present
+                    assert "queries" in eval_data and "corpus" in eval_data and "relevant_docs" in eval_data
+                except Exception as e:
+                    print(f"Invalid evaluation data format: {e}")
+                    use_fallback = True
+            else:
+                use_fallback = True
+
+            if use_fallback:
+                print("Using test set from eval_dataset for evaluation.")
+                eval_data = convert_to_ir_eval_format(triplet_dataset["test"])
+
+            evaluator = InformationRetrievalEvaluator(
+                eval_data["queries"],
+                eval_data["corpus"],
+                eval_data["relevant_docs"],
+                name="ir-eval"
+            )
         else:
             evaluator = None
-            
+        from IPython import embed; embed()
         trainer = SentenceTransformerTrainer(
                 model=model,
                 args=args,
@@ -266,10 +287,11 @@ def train(
                 loss=loss,
                 evaluator = evaluator)
         trainer.train()
+        return model
     else:
         logger.info("Trained GPL model found. Now skip training")
         
-        return model
+
 
     ### Train and evaluate QGen
     if mnrl_output_dir is not None:
