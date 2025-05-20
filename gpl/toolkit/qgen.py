@@ -11,7 +11,7 @@ def qgen(
     generator_name_or_path="BeIR/query-gen-msmarco-t5-base-v1",
     ques_per_passage=3,
     bsz=32,
-    qgen_prefix="qgen",
+    qgen_prefix="qgen"
 ):
     #### Provide the data_path where nfcorpus has been downloaded and unzipped
     corpus = GenericDataLoader(data_path).load_corpus()
@@ -33,7 +33,7 @@ def qgen(
             output_dir=output_dir,
             ques_per_passage=ques_per_passage,
             prefix=prefix,
-            batch_size=bsz,
+            batch_size=bsz
         )
     except RuntimeError as e:
         if "CUDA out of memory" in str(e):

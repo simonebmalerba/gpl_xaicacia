@@ -44,30 +44,34 @@ def train(
     mnrl_output_dir: str = None,
     mnrl_evaluation_output: str = None,
     do_evaluation: str = False,
+    # Evaluation parameters
     evaluation_data: str = None,
     evaluation_output: str = "output",
-    qgen_prefix: str = "qgen",
+    # Base model
     base_ckpt: str = "distilbert-base-uncased",
+    # Parameters for query generation
+    qgen_prefix: str = "qgen",
     generator: str = "BeIR/query-gen-msmarco-t5-base-v1",
-    cross_encoder: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
-    batch_size_gpl: int = 32,
-    batch_size_generation: int = 32,
-    pooling: str = None,
-    max_seq_length: int = 350,
-    new_size: int = None,
     queries_per_passage: int = 3,
-    gpl_steps: int = 140000,
-    use_amp: bool = False,
+    batch_size_generation: int = 32,
+    # Negative mining
     retrievers: List[str] = ["msmarco-distilbert-base-v3", "msmarco-MiniLM-L-6-v3"],
     retriever_score_functions: List[str] = ["cos_sim", "cos_sim"],
     negatives_per_query: int = 50,
+    # Model for pseudolabeling
+    cross_encoder: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    max_seq_length: int = 350,
+    gpl_steps: int = 140000,
+    pooling: str = None,
+    new_size: int = None,
+    use_amp: bool = False,
     eval_split: str = "test",
     use_train_qrels: bool = False,
     gpl_score_function: str = "dot",
     rescale_range: List[float] = None,
-    training_args_kwargs = None,
     train_gpl: bool = True,
-    train_mnrl: bool = True
+    train_mnrl: bool = True,
+    training_args_kwargs = None,
 ):
     #### Assertions ####
     assert pooling in [None, "mean", "cls", "max"]
@@ -174,7 +178,7 @@ def train(
             generator_name_or_path=generator,
             ques_per_passage=queries_per_passage,
             bsz=batch_size_generation,
-            qgen_prefix=qgen_prefix,
+            qgen_prefix=qgen_prefix
         )
         corpus, gen_queries, gen_qrels = GenericDataLoader(
             path_to_generated_data, prefix=qgen_prefix
@@ -253,10 +257,9 @@ def train(
             loss =  losses.MarginMSELoss(model)
             args = training_args = get_training_args(
                 ckpt_dir=f"{ckpt_dir}",
-                batch_size_gpl=batch_size_gpl,
                 use_amp=True,
                 training_args_kwargs=training_args_kwargs
-            )
+            )   
             if do_evaluation:
                 # This block here is tricky
                 use_fallback = False
@@ -320,7 +323,6 @@ def train(
                 loss =  losses.MultipleNegativesRankingLoss(model)
                 args = training_args = get_training_args(
                     ckpt_dir=f"{ckpt_dir}",
-                    batch_size_gpl=batch_size_gpl,
                     use_amp=True,
                     training_args_kwargs=training_args_kwargs
                 )
