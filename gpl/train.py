@@ -71,6 +71,7 @@ def train(
     rescale_range: List[float] = None,
     train_gpl: bool = True,
     train_mnrl: bool = True,
+    batch_size: int = 32
     training_args_kwargs = None,
 ):
     #### Assertions ####
@@ -84,7 +85,7 @@ def train(
             logger.error("Cannot load evaluation data for evaluation usage.")
             raise e
     if new_size is not None and new_size != -1:
-        assert new_size * queries_per_passage >= batch_size_gpl
+        assert new_size * queries_per_passage >= batch_size
 
     #### Make sure there is a `corpus.jsonl` file. It should be under either `path_to_generated_data` or `evaluation_data`` ####
     #### Also resize the corpus for efficient training if required  ####
@@ -212,7 +213,7 @@ def train(
             gen_queries,
             corpus,
             gpl_steps,
-            batch_size_gpl,
+            batch_size,
             cross_encoder,
             max_seq_length,
         )
@@ -258,6 +259,7 @@ def train(
             args = training_args = get_training_args(
                 ckpt_dir=f"{ckpt_dir}",
                 use_amp=True,
+                batch_size=batch_size,
                 training_args_kwargs=training_args_kwargs
             )   
             if do_evaluation:
@@ -324,6 +326,7 @@ def train(
                 args = training_args = get_training_args(
                     ckpt_dir=f"{ckpt_dir}",
                     use_amp=True,
+                    batch_size=batch_size,
                     training_args_kwargs=training_args_kwargs
                 )
                 if do_evaluation:
@@ -411,7 +414,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cross_encoder", default="cross-encoder/ms-marco-MiniLM-L-6-v2"
     )
-    parser.add_argument("--batch_size_gpl", type=int, default=32)
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument(
         "--batch_size_generation",
         type=int,
