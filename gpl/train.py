@@ -71,7 +71,7 @@ def train(
     rescale_range: List[float] = None,
     train_gpl: bool = True,
     train_mnrl: bool = True,
-    batch_size: int = 32
+    batch_size: int = 32,
     training_args_kwargs = None,
 ):
     #### Assertions ####

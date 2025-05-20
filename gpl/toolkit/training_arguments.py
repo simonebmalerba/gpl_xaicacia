@@ -5,7 +5,7 @@ from sentence_transformers.trainer import BatchSamplers
 def get_training_args(
     ckpt_dir: str,
     use_amp: bool,
-    batch_size: int
+    batch_size: int,
     training_args_kwargs: dict = None
 ) -> SentenceTransformerTrainingArguments:
     
