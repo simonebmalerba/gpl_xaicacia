@@ -131,4 +131,4 @@ dmypy.json
 sample-data/fiqa
 sample-data/fiqa.zip
 sample-data/output
-qa_dataset_wri/
+qa_datasets/

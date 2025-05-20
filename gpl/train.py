@@ -65,7 +65,9 @@ def train(
     use_train_qrels: bool = False,
     gpl_score_function: str = "dot",
     rescale_range: List[float] = None,
-    training_args_kwargs = None
+    training_args_kwargs = None,
+    train_gpl: bool = True,
+    train_mnrl: bool = True
 ):
     #### Assertions ####
     assert pooling in [None, "mean", "cls", "max"]
@@ -233,97 +235,88 @@ def train(
 
     ### Train the model with MarginMSE loss ###
     #### This will be skipped if the checkpoint at the indicated training steps can be found ####
-    ckpt_dir = os.path.join(output_dir,f'{base_ckpt}_'+str(gpl_steps))
-    if not os.path.exists(ckpt_dir) or (
-        os.path.exists(ckpt_dir) and not os.listdir(ckpt_dir)
-    ):
-        logger.info("Now doing training on the generated data with the MarginMSE loss")
-        
-        #### It can load checkpoints in both SBERT-format (recommended) and Huggingface-format
-        #model: SentenceTransformer = load_sbert(base_ckpt, pooling, max_seq_length)
-        model = SentenceTransformer( base_ckpt,trust_remote_code=True)
-        fpath_gpl_data = os.path.join(path_to_generated_data, gpl_training_data_fname)
-        logger.info(f"Load GPL training data from {fpath_gpl_data}")
-        triplet_dataset = build_hf_dataset(fpath_gpl_data,gen_queries,corpus).train_test_split(test_size=0.3)
-        train_dataset= triplet_dataset["train"]
-        loss =  losses.MarginMSELoss(model)
-        args = training_args = get_training_args(
-            ckpt_dir=f"{ckpt_dir}",
-            batch_size_gpl=32,
-            use_amp=True,
-            training_args_kwargs=training_args_kwargs
-        )
-        if do_evaluation:
-            use_fallback = False
-            if evaluation_data and os.path.exists(evaluation_data):
-                try:
-                    with open(evaluation_data, "r", encoding="utf-8") as f:
-                        eval_data = json.load(f)
-                    # Check if keys are present
-                    assert "queries" in eval_data and "corpus" in eval_data and "relevant_docs" in eval_data
-                except Exception as e:
-                    print(f"Invalid evaluation data format: {e}")
-                    use_fallback = True
-            else:
-                use_fallback = True
-
-            if use_fallback:
-                print("Using test set from eval_dataset for evaluation.")
-                eval_data = convert_to_ir_eval_format(triplet_dataset["test"])
-
-            evaluator = InformationRetrievalEvaluator(
-                eval_data["queries"],
-                eval_data["corpus"],
-                eval_data["relevant_docs"],
-                name="ir-eval"
-            )
-        else:
-            evaluator = None
-        from IPython import embed; embed()
-        trainer = SentenceTransformerTrainer(
-                model=model,
-                args=args,
-                train_dataset = train_dataset,
-                loss=loss,
-                evaluator = evaluator)
-        trainer.train()
-        return model
-    else:
-        logger.info("Trained GPL model found. Now skip training")
-        
-
-
-    ### Train and evaluate QGen
-    if mnrl_output_dir is not None:
-        assert (
-            mnrl_evaluation_output is not None
-        ), "Evaluation path for MNRL should not be None, either"
-        ckpt_dir = mnrl_output_dir
+    if train_gpl: 
+        ckpt_dir = os.path.join(output_dir,f'{base_ckpt}_'+str(gpl_steps))
         if not os.path.exists(ckpt_dir) or (
             os.path.exists(ckpt_dir) and not os.listdir(ckpt_dir)
         ):
-            logger.info("Now training MNRL on generated data")
-            mnrl(
-                path_to_generated_data,
-                base_ckpt,
-                mnrl_output_dir,
-                max_seq_length,
-                use_amp,
-                qgen_prefix,
+            logger.info("Now doing training on the generated data with the MarginMSE loss")
+            
+            #### It can load checkpoints in both SBERT-format (recommended) and Huggingface-format
+            #model: SentenceTransformer = load_sbert(base_ckpt, pooling, max_seq_length)
+            model = SentenceTransformer( base_ckpt,trust_remote_code=True)
+            fpath_gpl_data = os.path.join(path_to_generated_data, gpl_training_data_fname)
+            logger.info(f"Load GPL training data from {fpath_gpl_data}")
+            triplet_dataset = build_hf_dataset(fpath_gpl_data,gen_queries,corpus).train_test_split(test_size=0.3)
+            train_dataset= triplet_dataset["train"]
+            
+            loss =  losses.MarginMSELoss(model)
+            args = training_args = get_training_args(
+                ckpt_dir=f"{ckpt_dir}",
+                batch_size_gpl=32,
+                use_amp=True,
+                training_args_kwargs=training_args_kwargs
             )
-        else:
-            logger.info("Trained MNRL model found. Now skip training")
+            
+            if do_evaluation:
+                use_fallback = False
+                if evaluation_data and os.path.exists(evaluation_data):
+                    try:
+                        with open(evaluation_data, "r", encoding="utf-8") as f:
+                            eval_data = json.load(f)
+                        # Check if keys are present
+                        assert "queries" in eval_data and "corpus" in eval_data and "relevant_docs" in eval_data
+                    except Exception as e:
+                        print(f"Invalid evaluation data format: {e}")
+                        use_fallback = True
+                else:
+                    use_fallback = True
 
-        logger.info("Doing evaluation for QGen (MNRL)")
-        evaluate(
-            evaluation_data,
-            mnrl_evaluation_output,
-            ckpt_dir,
-            max_seq_length,
-            score_function="cos_sim",
-            pooling=pooling,
-            split=eval_split,
-        )
+                if use_fallback:
+                    print("Using test set from eval_dataset for evaluation.")
+                    
+                eval_data = convert_to_ir_eval_format(corpus, gen_queries, gen_qrels)
+                evaluator = InformationRetrievalEvaluator(
+                    queries = eval_data["queries"],
+                    corpus = eval_data["corpus"],
+                    relevant_docs = eval_data["relevant_docs"],
+                    name="ir-eval"
+                )
+            else:
+                evaluator = None
+            # Evaluate baseline performance of the model
+            evaluator(model)
+            
+            trainer = SentenceTransformerTrainer(
+                    model=model,
+                    args=args,
+                    train_dataset = train_dataset,
+                    loss=loss,
+                    evaluator = evaluator,
+                    )
+            trainer.train()
+            return model
+        else:
+            logger.info("Trained GPL model found. Now skip training")
+            
+
+    if train_mnrl:
+        ### Train and evaluate QGen
+        if mnrl_output_dir is not None:
+            assert (
+                mnrl_evaluation_output is not None
+            ), "Evaluation path for MNRL should not be None, either"
+            ckpt_dir = mnrl_output_dir
+            if not os.path.exists(ckpt_dir) or (
+                os.path.exists(ckpt_dir) and not os.listdir(ckpt_dir)
+            ):
+                logger.info("Now training MNRL on generated data")
+                model = SentenceTransformer( base_ckpt,trust_remote_code=True)
+                fpath_training_data = os.path.join(path_to_generated_data, f"{qgen_prefix}-qrels","train.tsv")
+                qa_dataset = build_hf_dataset(fpath_training_data,gen_queries,corpus).train_test_split(test_size=0.3)
+            else:
+                logger.info("Trained MNRL model found. Now skip training")
+
 
 
 if __name__ == "__main__":

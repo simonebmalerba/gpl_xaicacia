@@ -16,28 +16,21 @@ from .sbert import load_sbert
 
 logger = logging.getLogger(__name__)
 
-def convert_to_ir_eval_format(eval_dataset):
+def convert_to_ir_eval_format(corpus, gen_queries, gen_qrels):
+    #WRONG
     '''
         Convert triplet dataset into a dictionary of {queries,corpus, relevant_docs}
         compatible with InformationRetrievalEvaluator of ST.
     '''
-    queries = {}
-    corpus = {}
-    relevant_docs = {}
-
-    for idx, (query, doc) in enumerate(zip(eval_dataset["text1"], eval_dataset["text2"])):
-        qid = f"q{idx}"
-        did = f"d{idx}"
-
-        queries[qid] = query
-        corpus[did] = doc
-        relevant_docs[qid] = [did]  # relevant_docs must be a set
-
-    return {
-        "queries": queries,
-        "corpus": corpus,
-        "relevant_docs": relevant_docs,
-    }
+    eval_data = {}
+    for k, v in corpus.items():
+        corpus[k] = (v.get('title', '') + ' ' + v.get('text', '')).strip()
+    eval_data["corpus"] = corpus
+    eval_data["queries"] = gen_queries
+    for k, v in gen_qrels.items():
+        gen_qrels[k] = list(v.keys())[0]
+    eval_data["relevant_docs"] = gen_qrels
+    return eval_data
     
 def evaluate(
     data_path: str,

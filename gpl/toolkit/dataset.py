@@ -72,7 +72,7 @@ class HardNegativeDataset(TorchDataset):
 
         if len(pos_pids) > 0 and len(neg_pids) > 0:
             query_text = self.queries[query_dict["qid"]]
-
+            
             pos_pid = random.choice(pos_pids)
             pos_text = concat_title_and_body(pos_pid, self.corpus, self.sep)
 
@@ -88,7 +88,7 @@ class HardNegativeDataset(TorchDataset):
             return None
 
 
-def build_hf_dataset(tsv_path, queries, corpus, sep=" ", max_lines=None):
+def build_hf_dataset(tsv_path, queries, corpus, sep=" ", max_lines=None,qa_only=False):
     query_texts = []
     pos_texts = []
     neg_texts = []
@@ -104,21 +104,42 @@ def build_hf_dataset(tsv_path, queries, corpus, sep=" ", max_lines=None):
         line = linecache.getline(tsv_path, idx + 1)  # linecache is 1-indexed
         if not line.strip():
             continue
-        try:
-            qid, pos_pid, neg_pid, label = line.strip().split("\t")
-        except ValueError:
+        parts = line.strip().split("\t")
+        # Terrible hack, to fix
+        if idx == 0 and len(parts) != 4:
+            continue
+        
+        if len(parts) == 4:
+            qid, pos_pid, neg_pid, label = parts
+            query_texts.append(queries[qid])
+            pos_texts.append(concat_title_and_body(pos_pid, corpus, sep))
+            neg_texts.append(concat_title_and_body(neg_pid, corpus, sep))
+            labels.append(float(label))
+        elif len(parts) == 3:
+            # qid, pos_pid, relevance_score -> ignore relevance_score
+            qid, pos_pid, _ = parts
+            query_texts.append(queries[qid])
+            pos_texts.append(concat_title_and_body(pos_pid, corpus, sep))
+        elif len(parts) == 2:
+            # qid, pos_pid
+            qid, pos_pid = parts
+            query_texts.append(queries[qid])
+            pos_texts.append(concat_title_and_body(pos_pid, corpus, sep))
+        else:
             continue  # malformed line
 
-        query_texts.append(queries[qid])
-        pos_texts.append(concat_title_and_body(pos_pid, corpus, sep))
-        neg_texts.append(concat_title_and_body(neg_pid, corpus, sep))
-        labels.append(float(label))
 
-    hf_dataset = Dataset.from_dict({
-        "text1": query_texts,
-        "text2": pos_texts,
-        "text3": neg_texts,
-        "label": labels
-    })
+    if neg_texts:
+        hf_dataset = Dataset.from_dict({
+            "text1": query_texts,
+            "text2": pos_texts,
+            "text3": neg_texts,
+            "label": labels
+        })
+    else:
+        hf_dataset = Dataset.from_dict({
+            "question": query_texts,
+            "answer": pos_texts
+        })
 
     return hf_dataset
