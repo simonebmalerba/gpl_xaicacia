@@ -253,12 +253,13 @@ def train(
             loss =  losses.MarginMSELoss(model)
             args = training_args = get_training_args(
                 ckpt_dir=f"{ckpt_dir}",
-                batch_size_gpl=32,
+                batch_size_gpl=batch_size_gpl,
                 use_amp=True,
                 training_args_kwargs=training_args_kwargs
             )
             
             if do_evaluation:
+                # This block here is tricky
                 use_fallback = False
                 if evaluation_data and os.path.exists(evaluation_data):
                     try:
@@ -282,11 +283,11 @@ def train(
                     relevant_docs = eval_data["relevant_docs"],
                     name="ir-eval"
                 )
+                # Evaluate baseline performance of the model
+                evaluator(model,output_path = f"{ckpt_dir}/eval")
             else:
                 evaluator = None
-            # Evaluate baseline performance of the model
-            evaluator(model)
-            
+              
             trainer = SentenceTransformerTrainer(
                     model=model,
                     args=args,
@@ -295,8 +296,7 @@ def train(
                     evaluator = evaluator,
                     )
             trainer.train()
-            
-            return model
+            trainer.save_model(f"{ckpt_dir}/final")
         else:
             logger.info("Trained GPL model found. Now skip training")
             
@@ -304,17 +304,67 @@ def train(
     if train_mnrl:
         ### Train and evaluate QGen
         if mnrl_output_dir is not None:
+            
             assert (
                 mnrl_evaluation_output is not None
             ), "Evaluation path for MNRL should not be None, either"
-            ckpt_dir = mnrl_output_dir
+            
+            ckpt_dir = os.path.join(mnrl_output_dir,f'{base_ckpt}_'+str(gpl_steps))
             if not os.path.exists(ckpt_dir) or (
                 os.path.exists(ckpt_dir) and not os.listdir(ckpt_dir)
             ):
                 logger.info("Now training MNRL on generated data")
                 model = SentenceTransformer( base_ckpt,trust_remote_code=True)
                 fpath_training_data = os.path.join(path_to_generated_data, f"{qgen_prefix}-qrels","train.tsv")
-                qa_dataset = build_hf_dataset(fpath_training_data,gen_queries,corpus).train_test_split(test_size=0.3)
+                train_dataset = build_hf_dataset(fpath_training_data,gen_queries,corpus)
+                loss =  losses.MultipleNegativesRankingLoss(model)
+                args = training_args = get_training_args(
+                    ckpt_dir=f"{ckpt_dir}",
+                    batch_size_gpl=batch_size_gpl,
+                    use_amp=True,
+                    training_args_kwargs=training_args_kwargs
+                )
+                if do_evaluation:
+                    # This block here is tricky
+                    use_fallback = False
+                    if evaluation_data and os.path.exists(evaluation_data):
+                        try:
+                            with open(evaluation_data, "r", encoding="utf-8") as f:
+                                eval_data = json.load(f)
+                            # Check if keys are present
+                            assert "queries" in eval_data and "corpus" in eval_data and "relevant_docs" in eval_data
+                        except Exception as e:
+                            print(f"Invalid evaluation data format: {e}")
+                            use_fallback = True
+                    else:
+                        use_fallback = True
+
+                    if use_fallback:
+                        print("Using test set from eval_dataset for evaluation.")
+                        eval_data = convert_to_ir_eval_format(corpus, gen_queries, gen_qrels)
+                        
+                    evaluator = InformationRetrievalEvaluator(
+                        queries = eval_data["queries"],
+                        corpus = eval_data["corpus"],
+                        relevant_docs = eval_data["relevant_docs"],
+                        name="ir-eval"
+                    )
+                    # Evaluate baseline performance of the model
+                    evaluator(model,output_path = f"{ckpt_dir}/eval")
+                else:
+                    evaluator = None
+                    
+                trainer = SentenceTransformerTrainer(
+                    model=model,
+                    args=args,
+                    train_dataset = train_dataset,
+                    loss=loss,
+                    evaluator = evaluator,
+                    )
+                
+                trainer.train()
+                trainer.save_model(f"{ckpt_dir}/final")
+                
             else:
                 logger.info("Trained MNRL model found. Now skip training")
 
