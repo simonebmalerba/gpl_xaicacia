@@ -274,8 +274,8 @@ def train(
 
                 if use_fallback:
                     print("Using test set from eval_dataset for evaluation.")
+                    eval_data = convert_to_ir_eval_format(corpus, gen_queries, gen_qrels)
                     
-                eval_data = convert_to_ir_eval_format(corpus, gen_queries, gen_qrels)
                 evaluator = InformationRetrievalEvaluator(
                     queries = eval_data["queries"],
                     corpus = eval_data["corpus"],
@@ -295,6 +295,7 @@ def train(
                     evaluator = evaluator,
                     )
             trainer.train()
+            
             return model
         else:
             logger.info("Trained GPL model found. Now skip training")
