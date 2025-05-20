@@ -257,7 +257,6 @@ def train(
                 use_amp=True,
                 training_args_kwargs=training_args_kwargs
             )
-            
             if do_evaluation:
                 # This block here is tricky
                 use_fallback = False
@@ -284,6 +283,7 @@ def train(
                     name="ir-eval"
                 )
                 # Evaluate baseline performance of the model
+                os.makedirs(f"{ckpt_dir}/eval", exist_ok=True)
                 evaluator(model,output_path = f"{ckpt_dir}/eval")
             else:
                 evaluator = None
@@ -350,6 +350,7 @@ def train(
                         name="ir-eval"
                     )
                     # Evaluate baseline performance of the model
+                    os.makedirs(f"{ckpt_dir}/eval", exist_ok=True)
                     evaluator(model,output_path = f"{ckpt_dir}/eval")
                 else:
                     evaluator = None
