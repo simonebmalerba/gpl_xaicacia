@@ -7,7 +7,6 @@ from .toolkit import (
     PseudoLabeler,
     build_hf_dataset,
     evaluate,
-    convert_to_ir_eval_format,
     resize,
     load_sbert,
     set_logger_format,
@@ -278,8 +277,7 @@ def train(
                     use_fallback = True
 
                 if use_fallback:
-                    print("Using test set from eval_dataset for evaluation.")
-                    eval_data = convert_to_ir_eval_format(corpus, gen_queries, gen_qrels)
+                    evaluator = None
                     
                 evaluator = InformationRetrievalEvaluator(
                     queries = eval_data["queries"],
@@ -345,8 +343,7 @@ def train(
                         use_fallback = True
 
                     if use_fallback:
-                        print("Using test set from eval_dataset for evaluation.")
-                        eval_data = convert_to_ir_eval_format(corpus, gen_queries, gen_qrels)
+                        evaluator = None
                         
                     evaluator = InformationRetrievalEvaluator(
                         queries = eval_data["queries"],
