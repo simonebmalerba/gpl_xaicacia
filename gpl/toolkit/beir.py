@@ -28,7 +28,7 @@ def save_queries(queries: Dict[str, str], output_dir):
 def save_qrels(qrels: Dict[str, Dict[str, float]], output_dir, split):
     os.makedirs(os.path.join(output_dir, "qrels"), exist_ok=True)
 
-    assert split in ["train", "test", "dev"]
+    assert split in ["train", "test", "dev","train_filtered"]
     save_path = os.path.join(output_dir, f"qrels/{split}.tsv")
     with open(save_path, "w") as f:
         header = "query-id\tcorpus-id\tscore\n"

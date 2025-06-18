@@ -1,6 +1,7 @@
 import json
 from beir.datasets.data_loader import GenericDataLoader
 from sentence_transformers import SentenceTransformer
+
 import torch
 from easy_elasticsearch import ElasticSearchBM25
 import tqdm
@@ -9,6 +10,7 @@ import os
 import logging
 import argparse
 import time
+from .beir import save_queries,save_qrels
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,7 @@ class NegativeMiner(object):
         retriever_score_functions=["none", "cos_sim", "cos_sim"],
         nneg=50,
         use_train_qrels: bool = False,
+        filter_questions: bool = False
     ):
         if use_train_qrels:
             logger.info("Using labeled qrels to construct the hard-negative data")
@@ -32,6 +35,7 @@ class NegativeMiner(object):
             self.corpus, self.gen_queries, self.gen_qrels = GenericDataLoader(
                 generated_path, prefix=prefix
             ).load(split="train")
+        self.generated_path = generated_path
         self.output_path = os.path.join(generated_path, "hard-negatives.jsonl")
         self.retrievers = retrievers
         self.retriever_score_functions = retriever_score_functions
@@ -49,6 +53,8 @@ class NegativeMiner(object):
                 "`negatives_per_query` > corpus size. Please use a smaller `negatives_per_query`"
             )
             self.nneg = len(self.corpus)
+        
+        self.filter_questions = filter_questions
 
     def _get_doc(self, did):
         return " ".join([self.corpus[did]["title"], self.corpus[did]["text"]])
@@ -74,6 +80,8 @@ class NegativeMiner(object):
         )
         qids = list(self.gen_qrels.keys())
         queries = list(map(lambda qid: self.gen_queries[qid], qids))
+        filtered_qrels = {}  # new qrels for the filtered subset
+        filtered_gen_queries = {}
         for start in tqdm.trange(0, len(queries), 128):
             qid_batch = qids[start : start + 128]
             qemb_batch = sbert.encode(
@@ -86,12 +94,38 @@ class NegativeMiner(object):
             score_mtrx = torch.matmul(qemb_batch, doc_embs.t())  # (qsize, dsize)
             _, indices_topk = score_mtrx.topk(k=self.nneg, dim=-1)
             indices_topk = indices_topk.tolist()
-            for qid, neg_dids in zip(qid_batch, indices_topk):
+            for i,(qid, neg_dids) in enumerate(zip(qid_batch, indices_topk)):
+                q_scores = score_mtrx[i]
+                pos_ids = list(self.gen_qrels[qid].keys())
+                pos_indices = [np.where(dids == pid)[0][0] for pid in pos_ids if pid in dids]
+
+                if self.filter_questions:
+                    neg_mask = torch.ones(len(q_scores), dtype=bool)
+                    neg_mask[pos_indices] = False
+                    neg_scores = q_scores[neg_mask].tolist()
+                    p95 = np.percentile(neg_scores, 95)
+
+                    # Check if any pos score is above 95th percentile of negatives
+                    pos_scores = q_scores[pos_indices]
+                    keep = (pos_scores > p95).any().item()
+                    if not keep:
+                        continue 
                 neg_dids = dids[neg_dids].tolist()
+                to_keep = []
                 for pos_did in self.gen_qrels[qid]:
                     if pos_did in neg_dids:
                         neg_dids.remove(pos_did)
                 result[qid] = neg_dids
+                filtered_gen_queries[qid] = self.gen_queries[qid]
+                filtered_qrels[qid] = self.gen_qrels[qid]
+        # Update self.gen_qrels with the filtered one
+        if self.filter_questions:
+            logger.info(f"Filtered out {len(self.gen_qrels) - len(filtered_qrels)} queries.")
+            self.gen_qrels = filtered_qrels
+            self.gen_queries = filtered_gen_queries
+            save_qrels(
+                filtered_qrels, self.generated_path , split="train_filtered"
+            ) 
         return result
 
     def _mine_bm25(self):

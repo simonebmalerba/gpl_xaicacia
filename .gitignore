@@ -132,3 +132,7 @@ sample-data/fiqa
 sample-data/fiqa.zip
 sample-data/output
 qa_datasets/
+
+*.json
+*.jsonl
+*.txt
