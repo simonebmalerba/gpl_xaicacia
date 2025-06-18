@@ -162,7 +162,7 @@ def train(
             )
     elif f"{qgen_prefix}-qrels" in os.listdir(
         path_to_generated_data
-xx}-queries.jsonl" in os.listdir(path_to_generated_data):
+    ) and f"{qgen_prefix}-queries.jsonl" in os.listdir(path_to_generated_data):
         logger.info("Loading from existing generated data")
         corpus, gen_queries, gen_qrels = GenericDataLoader(
             path_to_generated_data, prefix=qgen_prefix
